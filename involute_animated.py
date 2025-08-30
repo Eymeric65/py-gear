@@ -13,28 +13,33 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation, PillowWriter
 import os
 
+# =========================
+# Editable parameters (same as involute.py)
+# =========================
+z       = 5                 # number of teeth
+m       = 2.0                # module
+alpha   = np.deg2rad(20.0)   # pressure angle (radians)
+
+# On first version unused 
+rho_f   = 0.38*m             # rack cutter tip radius (≈hob/shaper tip radius)
+backlash= 0.0                # preview only
+face_w  = 8.0                # for later 3D extrusion (unused here)
+
+undercut_auto_suppress = False # automatic undercut suppression( set the profile shifting value accordingly)
+
+# =========================
+# Calculated values (same as involute.py)
+# =========================
+
+# Standard radii
+rp = m*z/2.0                             # pitch radius
+rb = rp*np.cos(alpha)                    # base radius
+
 def calculate_gear(profile_shift):
     """
     Function that wraps the exact behavior from involute.py
     Returns all the calculated values for a given profile_shift
     """
-    # =========================
-    # Editable parameters (same as involute.py)
-    # =========================
-    z       = 5                 # number of teeth
-    m       = 2.0                # module
-    alpha   = np.deg2rad(20.0)   # pressure angle (radians)
-
-    # On first version unused 
-    rho_f   = 0.38*m             # rack cutter tip radius (≈hob/shaper tip radius)
-    backlash= 0.0                # preview only
-    face_w  = 8.0                # for later 3D extrusion (unused here)
-
-    undercut_auto_suppress = False # automatic undercut suppression( set the profile shifting value accordingly)
-
-    # =========================
-    # Calculated values (same as involute.py)
-    # =========================
 
     # Standard radii
     rp = m*z/2.0                             # pitch radius
@@ -66,9 +71,9 @@ def calculate_gear(profile_shift):
     tooth_thickness = m * np.pi / 2
     angular_width = np.pi/z # tooth angular width
 
-    involute_points = 400
+    involute_points = 1000
 
-    theta = np.linspace(0, 2*np.pi, involute_points)
+    theta = np.linspace(0, np.pi, involute_points)
 
     # Generate involute curve points (same as involute.py)
     x_involute = rb * (np.cos(theta) + theta * np.sin(theta))
@@ -138,16 +143,25 @@ def calculate_gear(profile_shift):
     }
 
 # Animation parameters
-profile_shift_min = -1.0
-profile_shift_max = 1.5
-num_frames = 60
-fps = 10
+profile_shift_min = rb-rp
+profile_shift_max = 1
+
+print(profile_shift_min, profile_shift_max)
+num_frames = 100
+fps = 25
 
 # Create array of profile_shift values that go back and forth
+# triangle
 profile_shifts = np.concatenate([
     np.linspace(profile_shift_min, profile_shift_max, num_frames//2),
     np.linspace(profile_shift_max, profile_shift_min, num_frames//2)
 ])
+
+#cosine
+theta=np.linspace(0,2*np.pi,num_frames)
+
+profile_shifts= (profile_shift_max-profile_shift_min)*(np.cos(theta)+1)/2 + profile_shift_min
+
 
 # Create figure and axis
 fig, ax = plt.subplots(1, 1, figsize=(10, 10))
