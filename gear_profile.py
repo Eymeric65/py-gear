@@ -103,7 +103,7 @@ def generate_external_tooth_profile(z, m, alpha_deg, profile_shift=0.0, undercut
     involute_2 = []
     
     for i in range(num_points[0]):
-        t = i / (num_points[0] - 1)
+        t = float(i) / (num_points[0] - 1)
         theta = t * (max_involute_angle - min_involute_angle) + min_involute_angle
 
         # Basic involute coordinates
@@ -135,7 +135,7 @@ def generate_external_tooth_profile(z, m, alpha_deg, profile_shift=0.0, undercut
         beta_trochoid = math.atan(b_trochoid / base_radius) - offset_trochoid_angle
 
         for i in range(num_points[1]):
-            t = i / (num_points[1] - 1)
+            t = float(i) / (num_points[1] - 1)
             # EXACTLY as original: theta_trochoid = -np.linspace(-offset_trichoid_angle,0,involute_points)
             # which equals: theta_trochoid = np.linspace(0, offset_trichoid_angle, involute_points)
             theta_tro = t * offset_trochoid_angle
@@ -176,7 +176,7 @@ def generate_external_tooth_profile(z, m, alpha_deg, profile_shift=0.0, undercut
     end_angle_upper = tooth_angle + involute_at_addendum
     
     for i in range(num_points[2]):
-        t = i / (num_points[2] - 1)
+        t = float(i) / (num_points[2] - 1)
         theta_arc = start_angle_upper + t * (end_angle_upper - start_angle_upper)
         x_arc = addendum_radius * math.cos(theta_arc)
         y_arc = addendum_radius * math.sin(theta_arc)
@@ -193,7 +193,7 @@ def generate_external_tooth_profile(z, m, alpha_deg, profile_shift=0.0, undercut
         end_angle_lower = -angular_tooth_width * 2 - involute_function(deddendum_involute_angle)
         
     for i in range(num_points[3]):
-        t = i / (num_points[3] - 1)
+        t = float(i) / (num_points[3] - 1)
         theta_arc = start_angle_lower + t * (end_angle_lower - start_angle_lower)
         x_arc = dedendum_radius * math.cos(theta_arc)
         y_arc = dedendum_radius * math.sin(theta_arc)
@@ -267,7 +267,7 @@ def generate_internal_tooth_profile(z, m, alpha_deg, thickness, profile_shift=0.
     dedendum_radius = max(pitch_radius + 1.25 * m, 0.01)
     
     # Handle case where base radius is larger than pitch radius
-    if base_radius / pitch_radius > 1.0:
+    if base_radius > pitch_radius :
         offset_angle = 0.0
     else:
         offset_angle = math.acos(base_radius / pitch_radius)
@@ -300,7 +300,7 @@ def generate_internal_tooth_profile(z, m, alpha_deg, thickness, profile_shift=0.
     involute_2 = []
     
     for i in range(num_points[0]):
-        t = i / (num_points[0] - 1)
+        t = float(i) / (num_points[0] - 1)
         theta = t * (max_involute_angle - min_involute_angle) + min_involute_angle
 
         # Basic involute coordinates
@@ -327,31 +327,49 @@ def generate_internal_tooth_profile(z, m, alpha_deg, thickness, profile_shift=0.
     end_angle_upper = tooth_angle + involute_at_dedendum
     
     for i in range(num_points[1]):
-        t = i / (num_points[1] - 1)
+        t = float(i) / (num_points[1] - 1)
         theta_arc = start_angle_upper + t * (end_angle_upper - start_angle_upper)
         x_arc = dedendum_radius * math.cos(theta_arc)
         y_arc = dedendum_radius * math.sin(theta_arc)
         upper_arc.append((x_arc, y_arc))
     
     # Lower arc (dedendum) - EXACTLY as in original code
-    lower_arc = []
+    # In order to avoid issue with to sharp corners, we need to double the lower arc in both side...
+    lower_arc_1 = []
+    lower_arc_2 = []
 
     start_angle_lower = tooth_angle + involute_function(addendum_involute_angle)
     end_angle_lower = -angular_tooth_width * 2 - involute_function(addendum_involute_angle)
-        
-    for i in range(num_points[2]):
-        t = i / (num_points[2] - 1)
-        theta_arc = start_angle_lower + t * (end_angle_lower - start_angle_lower)
+
+    angular_width_lower = end_angle_lower - start_angle_lower
+    
+    half_num_points_lower = num_points[2]//2
+    for i in range(half_num_points_lower):
+        t = float(i) / (half_num_points_lower - 1)
+        theta_arc = start_angle_lower + t * angular_width_lower/2
         x_arc = max(addendum_radius,base_radius) * math.cos(theta_arc)
         y_arc = max(addendum_radius,base_radius) * math.sin(theta_arc)
-        lower_arc.append((x_arc, y_arc))
+        lower_arc_1.append((x_arc, y_arc))
+
+
+    for i in range(half_num_points_lower):
+        t = float(i) / (half_num_points_lower - 1)
+        theta_arc = -involute_function(addendum_involute_angle) - t * angular_width_lower/2
+        x_arc = max(addendum_radius,base_radius) * math.cos(theta_arc)
+        y_arc = max(addendum_radius,base_radius) * math.sin(theta_arc)
+        lower_arc_2.append((x_arc, y_arc))
 
     # External arc
     external_arc = []
 
+    start_angle_external = -involute_function(addendum_involute_angle)  - angular_width_lower/2
+    end_angle_external = start_angle_lower + angular_width_lower/2
+
+    # Divide by two and 
+
     for i in range(num_points[3]):
         t = i / (num_points[3] - 1)
-        theta_arc = min_involute_angle + t * (end_angle_lower - min_involute_angle)
+        theta_arc = start_angle_external + t * (end_angle_external - start_angle_external)
         x_arc = (dedendum_radius+thickness) * math.cos(theta_arc)
         y_arc = (dedendum_radius+thickness) * math.sin(theta_arc)
         external_arc.append((x_arc, y_arc))
@@ -360,7 +378,8 @@ def generate_internal_tooth_profile(z, m, alpha_deg, thickness, profile_shift=0.
         'involute_1': involute_1,
         'upper_arc': upper_arc,
         'involute_2': involute_2,
-        'lower_arc': lower_arc,
+        'lower_arc_1': lower_arc_1,
+        'lower_arc_2': lower_arc_2,
         'external_arc': external_arc,
         'parameters': {
             'z': z,
@@ -392,15 +411,15 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     
     # Gear parameters
-    z = 20                    # number of teeth
+    z = 60                    # number of teeth
     m = 2.0                  # module
     alpha_deg = 20.0         # pressure angle in degrees
-    profile_shift = 0.0      # profile shifting
+    profile_shift = -1.0      # profile shifting
     undercut_auto_suppress = False
 
     thickness= 3.0 # thickness of internal gear
 
-    num_points = [40, 40, 10, 10]  # Number of points per segment
+    num_points = [10, 10, 5, 5]  # Number of points per segment
 
     external= False
     
@@ -411,6 +430,7 @@ if __name__ == "__main__":
         tooth_profile = generate_internal_tooth_profile(z, m, alpha_deg, thickness, profile_shift, undercut_auto_suppress,num_points=num_points)
 
     params = tooth_profile['parameters']
+
     
     # Create figure
     fig, ax = plt.subplots(1, 1, figsize=(12, 12))
@@ -435,12 +455,12 @@ if __name__ == "__main__":
         tooth_angle = i * 2 * math.pi / z
         
         # Rotate and plot each part of the tooth profile
-        if external :
+        if external:
             parts = ['trochoid_1', 'involute_1', 'upper_arc', 'involute_2', 'trochoid_2', 'lower_arc']
             colors = ['black', 'black', 'black', 'black', 'black', 'black']  # Changed upper_arc to cyan and lower_arc to brown
         else:
-            parts = [ 'involute_1', 'upper_arc', 'involute_2', 'lower_arc','external_arc']
-            colors = ['black', 'black', 'black', 'black', 'black']  # Changed upper_arc to cyan and lower_arc to brown
+            parts = [ 'involute_1', 'upper_arc', 'involute_2', 'lower_arc_1','lower_arc_2','external_arc']
+            colors = ['black', 'black', 'black', 'black', 'black', 'black']  # Changed upper_arc to cyan and lower_arc to brown
         
         for j, part_name in enumerate(parts):
             part_points = tooth_profile[part_name]

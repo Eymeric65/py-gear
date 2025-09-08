@@ -37,7 +37,7 @@ def involute_function(angle):
     return math.tan(angle) - angle
 
 
-def generate_tooth_profile(z, m, alpha_deg, profile_shift=0.0, undercut_auto_suppress=False, num_points=20):
+def generate_external_tooth_profile(z, m, alpha_deg, profile_shift=0.0, undercut_auto_suppress=False, num_points=[10,10,5,5]):
     """
     Generate the profile of one tooth consisting of 6 parts.
     
@@ -53,9 +53,9 @@ def generate_tooth_profile(z, m, alpha_deg, profile_shift=0.0, undercut_auto_sup
         Profile shifting value (default: 0.0)
     undercut_auto_suppress : bool
         Automatic undercut suppression (default: False)
-    num_points : int
-        Number of points per curve segment (default: 20)
-    
+    num_points : list of int
+        Number of points per curve segment, order is following : [involute,trochoid,addendum,deddundum] (default: [20, 20, 20, 20])
+
     Returns:
     --------
     dict containing the 6 profile parts:
@@ -99,6 +99,16 @@ def generate_tooth_profile(z, m, alpha_deg, profile_shift=0.0, undercut_auto_sup
     # Calculate involute parameters
     addendum_involute_angle = math.acos(base_radius / addendum_radius)
     max_involute_angle = addendum_involute_angle + involute_function(addendum_involute_angle)
+
+    if base_radius < dedendum_radius:
+
+        deddendum_involute_angle = math.acos(base_radius / dedendum_radius)
+
+    else : 
+
+        deddendum_involute_angle = 0
+
+    min_involute_angle = deddendum_involute_angle + involute_function(deddendum_involute_angle)
     
     # Tooth positioning angle (EXACTLY as in original code)
     tooth_angle = -angular_tooth_width - 2 * phi
@@ -107,10 +117,10 @@ def generate_tooth_profile(z, m, alpha_deg, profile_shift=0.0, undercut_auto_sup
     involute_1 = []
     involute_2 = []
     
-    for i in range(num_points):
-        t = float(i) / float(num_points - 1)  # Python 2.7 integer division fix
-        theta = t * max_involute_angle
-        
+    for i in range(num_points[0]):
+        t = float(i) / (num_points[0] - 1)
+        theta = t * (max_involute_angle - min_involute_angle) + min_involute_angle
+
         # Basic involute coordinates
         x_inv = base_radius * (math.cos(theta) + theta * math.sin(theta))
         y_inv = base_radius * (math.sin(theta) - theta * math.cos(theta))
@@ -120,10 +130,10 @@ def generate_tooth_profile(z, m, alpha_deg, profile_shift=0.0, undercut_auto_sup
         sin_tooth = math.sin(tooth_angle)
         x1 = x_inv * cos_tooth - y_inv * sin_tooth
         y1 = x_inv * sin_tooth + y_inv * cos_tooth
-        involute_1.append((x1, y1))
+        involute_2.append((x1, y1))
         
         # Second involute (mirrored in y, no rotation)
-        involute_2.append((x_inv, -y_inv))
+        involute_1.append((x_inv, -y_inv))
     
     # === Generate Trochoid Curves ===
     trochoid_1 = []
@@ -138,9 +148,9 @@ def generate_tooth_profile(z, m, alpha_deg, profile_shift=0.0, undercut_auto_sup
         alpha_trochoid = math.atan(h_trochoid / base_radius)
         offset_trochoid_angle = alpha_trochoid + involute_function(alpha_trochoid)
         beta_trochoid = math.atan(b_trochoid / base_radius) - offset_trochoid_angle
-        
-        for i in range(num_points):
-            t = float(i) / float(num_points - 1)  # Python 2.7 integer division fix
+
+        for i in range(num_points[1]):
+            t = float(i) / (num_points[1] - 1)
             # EXACTLY as original: theta_trochoid = -np.linspace(-offset_trichoid_angle,0,involute_points)
             # which equals: theta_trochoid = np.linspace(0, offset_trichoid_angle, involute_points)
             theta_tro = t * offset_trochoid_angle
@@ -180,8 +190,8 @@ def generate_tooth_profile(z, m, alpha_deg, profile_shift=0.0, undercut_auto_sup
     start_angle_upper = -involute_at_addendum
     end_angle_upper = tooth_angle + involute_at_addendum
     
-    for i in range(num_points):
-        t = float(i) / float(num_points - 1)  # Python 2.7 integer division fix
+    for i in range(num_points[2]):
+        t = float(i) / (num_points[2] - 1)
         theta_arc = start_angle_upper + t * (end_angle_upper - start_angle_upper)
         x_arc = addendum_radius * math.cos(theta_arc)
         y_arc = addendum_radius * math.sin(theta_arc)
@@ -189,16 +199,20 @@ def generate_tooth_profile(z, m, alpha_deg, profile_shift=0.0, undercut_auto_sup
     
     # Lower arc (dedendum) - EXACTLY as in original code
     lower_arc = []
+
     if base_radius > dedendum_radius:
         start_angle_lower = tooth_angle - beta_trochoid
         end_angle_lower = -angular_tooth_width * 2 + beta_trochoid
+    else: 
+        start_angle_lower = tooth_angle + involute_function(deddendum_involute_angle)
+        end_angle_lower = -angular_tooth_width * 2 - involute_function(deddendum_involute_angle)
         
-        for i in range(num_points):
-            t = float(i) / float(num_points - 1)  # Python 2.7 integer division fix
-            theta_arc = start_angle_lower + t * (end_angle_lower - start_angle_lower)
-            x_arc = dedendum_radius * math.cos(theta_arc)
-            y_arc = dedendum_radius * math.sin(theta_arc)
-            lower_arc.append((x_arc, y_arc))
+    for i in range(num_points[3]):
+        t = float(i) / (num_points[3] - 1)
+        theta_arc = start_angle_lower + t * (end_angle_lower - start_angle_lower)
+        x_arc = dedendum_radius * math.cos(theta_arc)
+        y_arc = dedendum_radius * math.sin(theta_arc)
+        lower_arc.append((x_arc, y_arc))
     
     return {
         'trochoid_1': trochoid_1,
@@ -219,8 +233,219 @@ def generate_tooth_profile(z, m, alpha_deg, profile_shift=0.0, undercut_auto_sup
         }
     }
 
-def create_gear_in_alibre(z, m, alpha_deg, profile_shift=0.0, thickness=10.0, 
-                         undercut_auto_suppress=False, num_points=50):
+def generate_internal_tooth_profile(z, m, alpha_deg, thickness, profile_shift=0.0, undercut_auto_suppress=False, num_points=[10,5,5,10]):
+    """
+    Generate the profile of one tooth consisting of 6 parts.
+    
+    Parameters:
+    -----------
+    z : int
+        Number of teeth
+    m : float
+        Module (mm)
+    alpha_deg : float
+        Pressure angle in degrees
+    thickness : float
+        External thickness (mm)
+    profile_shift : float
+        Profile shifting value (default: 0.0)
+    undercut_auto_suppress : bool
+        Automatic undercut suppression (default: False)
+    num_points : list of int
+        Number of points per curve segment, order is following : [involute,addendum,deddundum,external] (default: [20, 20, 20, 20])
+
+    Returns:
+    --------
+    dict containing the 6 profile parts:
+        'involute_1': [(x1, y1), (x2, y2), ...] - First involute curve  
+        'upper_arc': [(x1, y1), (x2, y2), ...] - Upper addendum arc
+        'involute_2': [(x1, y1), (x2, y2), ...] - Second involute curve
+        'lower_arc': [(x1, y1), (x2, y2), ...] - Lower dedendum arc
+        'external_arc': [(x1, y1), (x2, y2), ...] - External arc
+    """
+    
+    # Convert pressure angle to radians
+    alpha = math.radians(alpha_deg)
+    
+    # Standard radii calculations
+    pitch_radius = m * z / 2.0
+    base_radius = pitch_radius * math.cos(alpha)
+    
+    # Undercut auto suppress
+    if undercut_auto_suppress:
+        if base_radius > pitch_radius - m:  # Check for undercut
+            profile_shift = base_radius - (pitch_radius - m)
+    
+    # Apply profile shift
+    pitch_radius += profile_shift
+    addendum_radius = pitch_radius - m
+    dedendum_radius = max(pitch_radius + 1.25 * m, 0.01)
+    
+    # Handle case where base radius is larger than pitch radius
+    if base_radius > pitch_radius :
+        offset_angle = 0.0
+    else:
+        offset_angle = math.acos(base_radius / pitch_radius)
+    
+    # Involute angle at pitch circle
+    phi = involute_function(offset_angle)
+    
+    # Angular dimensions
+    angular_tooth_width = math.pi / z
+    
+    # Calculate involute parameters
+    dedendum_involute_angle = math.acos(base_radius / dedendum_radius)
+
+    if base_radius < addendum_radius:
+
+        addendum_involute_angle = math.acos(base_radius / addendum_radius)
+
+    else : 
+
+        addendum_involute_angle = 0
+        
+    max_involute_angle = dedendum_involute_angle + involute_function(dedendum_involute_angle)
+    min_involute_angle = addendum_involute_angle + involute_function(addendum_involute_angle)
+    
+    # Tooth positioning angle (EXACTLY as in original code)
+    tooth_angle = -angular_tooth_width - 2 * phi
+    
+    # === Generate Involute Curves ===
+    involute_1 = []
+    involute_2 = []
+    
+    for i in range(num_points[0]):
+        t = float(i) / (num_points[0] - 1)
+        theta = t * (max_involute_angle - min_involute_angle) + min_involute_angle
+
+        # Basic involute coordinates
+        x_inv = base_radius * (math.cos(theta) + theta * math.sin(theta))
+        y_inv = base_radius * (math.sin(theta) - theta * math.cos(theta))
+        
+        # First involute (rotated by tooth_angle)
+        cos_tooth = math.cos(tooth_angle)
+        sin_tooth = math.sin(tooth_angle)
+        x1 = x_inv * cos_tooth - y_inv * sin_tooth
+        y1 = x_inv * sin_tooth + y_inv * cos_tooth
+        involute_2.append((x1, y1))
+        
+        # Second involute (mirrored in y, no rotation)
+        involute_1.append((x_inv, -y_inv))
+    
+    # === Generate Arc Segments ===
+    
+    # Upper arc (addendum) - EXACTLY as in original code
+    upper_arc = []
+
+    involute_at_dedendum = involute_function(dedendum_involute_angle)
+    start_angle_upper = -involute_at_dedendum
+    end_angle_upper = tooth_angle + involute_at_dedendum
+    
+    for i in range(num_points[1]):
+        t = float(i) / (num_points[1] - 1)
+        theta_arc = start_angle_upper + t * (end_angle_upper - start_angle_upper)
+        x_arc = dedendum_radius * math.cos(theta_arc)
+        y_arc = dedendum_radius * math.sin(theta_arc)
+        upper_arc.append((x_arc, y_arc))
+    
+    # Lower arc (dedendum) - EXACTLY as in original code
+    # In order to avoid issue with to sharp corners, we need to double the lower arc in both side...
+    lower_arc_1 = []
+    lower_arc_2 = []
+
+    start_angle_lower = tooth_angle + involute_function(addendum_involute_angle)
+    end_angle_lower = -angular_tooth_width * 2 - involute_function(addendum_involute_angle)
+
+    angular_width_lower = end_angle_lower - start_angle_lower
+    
+    half_num_points_lower = num_points[2]//2
+    for i in range(half_num_points_lower):
+        t = float(i) / (half_num_points_lower - 1)
+        theta_arc = start_angle_lower + t * angular_width_lower/2
+        x_arc = max(addendum_radius,base_radius) * math.cos(theta_arc)
+        y_arc = max(addendum_radius,base_radius) * math.sin(theta_arc)
+        lower_arc_1.append((x_arc, y_arc))
+
+
+    for i in range(half_num_points_lower):
+        t = float(i) / (half_num_points_lower - 1)
+        theta_arc = -involute_function(addendum_involute_angle) - t * angular_width_lower/2
+        x_arc = max(addendum_radius,base_radius) * math.cos(theta_arc)
+        y_arc = max(addendum_radius,base_radius) * math.sin(theta_arc)
+        lower_arc_2.append((x_arc, y_arc))
+
+    # External arc
+    external_arc = []
+
+    start_angle_external = -involute_function(addendum_involute_angle)  - angular_width_lower/2
+    end_angle_external = start_angle_lower + angular_width_lower/2
+
+    # Divide by two and 
+
+    for i in range(num_points[3]):
+        t = i / (num_points[3] - 1)
+        theta_arc = start_angle_external + t * (end_angle_external - start_angle_external)
+        x_arc = (dedendum_radius+thickness) * math.cos(theta_arc)
+        y_arc = (dedendum_radius+thickness) * math.sin(theta_arc)
+        external_arc.append((x_arc, y_arc))
+
+    return {
+        'involute_1': involute_1,
+        'upper_arc': upper_arc,
+        'involute_2': involute_2,
+        'lower_arc_1': lower_arc_1,
+        'lower_arc_2': lower_arc_2,
+        'external_arc': external_arc,
+        'parameters': {
+            'z': z,
+            'm': m,
+            'alpha_deg': alpha_deg,
+            'profile_shift': profile_shift,
+            'pitch_radius': pitch_radius,
+            'base_radius': base_radius,
+            'addendum_radius': addendum_radius,
+            'dedendum_radius': dedendum_radius
+        }
+    }
+
+def alibre_arc(sketch, arc, reverse = False):
+
+    if reverse:
+        start_pt = arc[0]
+        end_pt = arc[-1]
+    else:
+        start_pt = arc[-1]
+        end_pt = arc[0]
+    
+    # Calculate center and create arc using AddArcCenterStartEnd
+    center_x, center_y = 0.0, 0.0  # Arc center is at origin for dedendum
+    lower_arc = sketch.AddArcCenterStartEnd(center_x, center_y, start_pt[0], start_pt[1], end_pt[0], end_pt[1], False)
+    print("  Created lower dedendum arc from (" + str(round(start_pt[0], 3)) + ", " + 
+            str(round(start_pt[1], 3)) + ") to (" + str(round(end_pt[0], 3)) + ", " + 
+            str(round(end_pt[1], 3)) + ")")
+    
+    return lower_arc
+
+def alibre_spline(sketch, points):
+    
+    
+    
+    if len(points) > 0:
+
+        spline_points = []
+
+        for x, y in points:
+            spline_points.append(x)
+            spline_points.append(y)
+        
+        spline = sketch.AddBspline(spline_points, False)
+    else: 
+        spline = None
+
+    return spline
+
+def create_external_gear_in_alibre(z, m, alpha_deg, profile_shift=0.0,
+                         undercut_auto_suppress=False,sketch=None):
     """
     Create a complete spur gear in Alibre CAD
     
@@ -230,7 +455,6 @@ def create_gear_in_alibre(z, m, alpha_deg, profile_shift=0.0, thickness=10.0,
     m : float - Module (mm)
     alpha_deg : float - Pressure angle (degrees)
     profile_shift : float - Profile shift coefficient
-    thickness : float - Gear thickness (mm)
     undercut_auto_suppress : bool - Auto suppress undercut
     num_points : int - Points per curve (higher = smoother)
     
@@ -244,151 +468,52 @@ def create_gear_in_alibre(z, m, alpha_deg, profile_shift=0.0, thickness=10.0,
         
         # Generate the tooth profile using our function
         print("Generating gear profile: z=" + str(z) + ", m=" + str(m) + ", alpha=" + str(alpha_deg) + "°")
-        tooth_profile = generate_tooth_profile(
-            z=z, m=m, alpha_deg=alpha_deg, 
-            profile_shift=profile_shift,
-            undercut_auto_suppress=undercut_auto_suppress,
-            num_points=num_points
+
+        tooth_profile = generate_external_tooth_profile(
+                z=z, m=m, alpha_deg=alpha_deg, 
+                profile_shift=profile_shift,
+                undercut_auto_suppress=undercut_auto_suppress
         )
         
         params = tooth_profile['parameters']
         print("Generated profile with pitch radius: " + str(round(params['pitch_radius'], 2)) + "mm")
         
-        # Get the current part (like in Alibre's gear generator)
-        part = CurrentPart()
-        if part is None:
-            print("Error: No active part found. Please create or open a part first.")
-            return False, None
-            
-        # Get the XY plane to create the gear on
-        gear_plane = part.XYPlane
-        
-        # Create a new sketch on the XY plane
-        sketch = part.AddSketch("ToothProfile", gear_plane)
-        
-        print("Creating tooth profile sketch...")
-        
         # === Create the tooth profile geometry ===
         
         # 1. Line from center (0,0) to start of trochoid_1
-        if tooth_profile['trochoid_1']:
+        if len(tooth_profile['trochoid_1']) == 0:
+            trochoid_start = tooth_profile['involute_1'][0]
+        else:
             trochoid_start = tooth_profile['trochoid_1'][-1]
-            center_to_trochoid = sketch.AddLine(0, 0, trochoid_start[0], trochoid_start[1], False)
-            print("  Created center line to trochoid_1: (0,0) -> (" + 
-                  str(round(trochoid_start[0], 3)) + ", " + str(round(trochoid_start[1], 3)) + ")")
+        center_to_trochoid = sketch.AddLine(0, 0, trochoid_start[0], trochoid_start[1], False)
         
         # 2. Trochoid_1 spline
-        if tooth_profile['trochoid_1'] and len(tooth_profile['trochoid_1']) > 1:
-            trochoid_1_points = []
-            for x, y in tooth_profile['trochoid_1']:
-                trochoid_1_points.append(x)
-                trochoid_1_points.append(y)
-            
-            trochoid_1_spline = sketch.AddBspline(trochoid_1_points, False)
-            print("  Created trochoid_1 spline with " + str(len(trochoid_1_points)) + " points")
-        
-        # 3. Involute_1 spline  
-        if tooth_profile['involute_1'] and len(tooth_profile['involute_1']) > 1:
-            involute_1_points = []
-            for x, y in tooth_profile['involute_1']:
-                involute_1_points.append(x)
-                involute_1_points.append(y)
-            
-            involute_1_spline = sketch.AddBspline(involute_1_points, False)
-            print("  Created involute_1 spline with " + str(len(involute_1_points)) + " points")
-        
+        trochoid_1_spline = alibre_spline(sketch, tooth_profile['trochoid_1'])
+
+        # 3. Involute_1 spline
+        involute_1_spline = alibre_spline(sketch, tooth_profile['involute_1'])
+
         # 4. Upper addendum arc
-        if tooth_profile['upper_arc'] and len(tooth_profile['upper_arc']) >= 3:
-            # For arc creation using center, start, and end points
-            start_pt = tooth_profile['upper_arc'][-1]
-            end_pt = tooth_profile['upper_arc'][0]
-            
-            # Calculate center and create arc using AddArcCenterStartEnd
-            center_x, center_y = 0.0, 0.0  # Arc center is at origin for addendum
-            upper_arc = sketch.AddArcCenterStartEnd(center_x, center_y, start_pt[0], start_pt[1], end_pt[0], end_pt[1], False)
-            print("  Created upper addendum arc from (" + str(round(start_pt[0], 3)) + ", " + 
-                  str(round(start_pt[1], 3)) + ") to (" + str(round(end_pt[0], 3)) + ", " + 
-                  str(round(end_pt[1], 3)) + ")")
+        upper_arc = alibre_arc(sketch, tooth_profile['upper_arc'])
         
         # 5. Involute_2 spline
-        if tooth_profile['involute_2'] and len(tooth_profile['involute_2']) > 1:
-            involute_2_points = []
-            for x, y in tooth_profile['involute_2']:
-                involute_2_points.append(x)
-                involute_2_points.append(y)
-            
-            involute_2_spline = sketch.AddBspline(involute_2_points, False)
-            print("  Created involute_2 spline with " + str(len(involute_2_points)) + " points")
+        involute_2_spline = alibre_spline(sketch, tooth_profile['involute_2'])
         
         # 6. Trochoid_2 spline
-        if tooth_profile['trochoid_2'] and len(tooth_profile['trochoid_2']) > 1:
-            trochoid_2_points = []
-            for x, y in tooth_profile['trochoid_2']:
-                trochoid_2_points.append(x)
-                trochoid_2_points.append(y)
-            
-            trochoid_2_spline = sketch.AddBspline(trochoid_2_points, False)
-            print("  Created trochoid_2 spline with " + str(len(trochoid_2_points)) + " points")
-        
+        trochoid_2_spline = alibre_spline(sketch, tooth_profile['trochoid_2'])
+
         # 7. Lower dedendum arc
-        if tooth_profile['lower_arc'] and len(tooth_profile['lower_arc']) >= 3:
-            start_pt = tooth_profile['lower_arc'][-1]
-            end_pt = tooth_profile['lower_arc'][0]
-            
-            # Calculate center and create arc using AddArcCenterStartEnd
-            center_x, center_y = 0.0, 0.0  # Arc center is at origin for dedendum
-            lower_arc = sketch.AddArcCenterStartEnd(center_x, center_y, start_pt[0], start_pt[1], end_pt[0], end_pt[1], False)
-            print("  Created lower dedendum arc from (" + str(round(start_pt[0], 3)) + ", " + 
-                  str(round(start_pt[1], 3)) + ") to (" + str(round(end_pt[0], 3)) + ", " + 
-                  str(round(end_pt[1], 3)) + ")")
+        lower_arc = alibre_arc(sketch, tooth_profile['lower_arc'])
         
         # 8. Line from end of lower arc back to center
-        if tooth_profile['lower_arc']:
-            arc_end = tooth_profile['lower_arc'][-1]
-            arc_to_center = sketch.AddLine(arc_end[0], arc_end[1], 0, 0, False)
-            print("  Created return line from dedendum arc to center: (" + 
-                  str(round(arc_end[0], 3)) + ", " + str(round(arc_end[1], 3)) + ") -> (0,0)")
+        arc_end = tooth_profile['lower_arc'][-1]
+        arc_to_center = sketch.AddLine(arc_end[0], arc_end[1], 0, 0, False)
+        print("  Created return line from dedendum arc to center: (" + 
+                str(round(arc_end[0], 3)) + ", " + str(round(arc_end[1], 3)) + ") -> (0,0)")
         
         # Close the sketch
         print("Sketch completed successfully")
         
-        # === Create 3D Feature ===
-        
-        # Extrude the sketch using AddExtrudeBoss (like in Alibre's gear generator)
-        print("Extruding sketch by " + str(thickness) + "mm...")
-        extrusion = part.AddExtrudeBoss("Gear", sketch, thickness, False)
-        
-        if extrusion is None:
-            print("Error: Failed to create extrusion")
-            return False, None
-        
-        print("Extrusion created successfully")
-        
-        # === Create Circular Pattern ===
-        
-        # Create circular pattern for all teeth (if more than 1)
-        if z > 1:
-            print("Creating circular pattern for " + str(z) + " teeth...")
-            
-            # Create circular pattern using Alibre's API
-            # AddCircularPattern(name, feature, axis, count, angle)
-            pattern_angle = 360.0  # Full circle
-            pattern = part.AddCircularPattern(
-                "GearTeeth",         # Pattern name
-                extrusion,           # Feature to pattern
-                part.ZAxis,          # Axis of rotation (Z-axis)
-                z,                   # Number of instances (teeth)
-                pattern_angle        # Total angle
-            )
-            
-            if pattern is None:
-                print("Warning: Failed to create circular pattern")
-                return True, extrusion  # Still return success for single tooth
-            else:
-                print("Circular pattern created successfully with " + str(z) + " teeth")
-                return True, pattern
-        
-        return True, extrusion
         
     except NameError as e:
         print("Error: Alibre API functions not available. This script must be run within Alibre CAD.")
@@ -397,94 +522,178 @@ def create_gear_in_alibre(z, m, alpha_deg, profile_shift=0.0, thickness=10.0,
     except Exception as e:
         print("Error creating gear: " + str(e))
         return False, None
-
-
-def create_standard_gear():
-    """Create a standard 20-tooth gear for testing"""
-    return create_gear_in_alibre(
-        z=20,                    # 20 teeth
-        m=2.0,                   # 2mm module
-        alpha_deg=20.0,          # 20° pressure angle
-        profile_shift=0.0,       # No profile shift
-        thickness=10.0,          # 10mm thick
-        undercut_auto_suppress=False,
-        num_points=10            # Smooth curves
-    )
-
-
-def create_small_gear_with_undercut_suppression():
-    """Create a small gear with automatic undercut suppression"""
-    return create_gear_in_alibre(
-        z=8,                     # 8 teeth (prone to undercut)
-        m=2.5,                   # 2.5mm module
-        alpha_deg=20.0,          # 20° pressure angle
-        profile_shift=0.0,       # Will be auto-calculated
-        thickness=12.0,          # 12mm thick
-        undercut_auto_suppress=True,  # Auto suppress undercut
-        num_points=40            # Very smooth curves
-    )
-
-
-def create_metric_gear(z, m, thickness=None):
-    """Create a standard metric gear with common parameters"""
-    if thickness is None:
-        thickness = max(5.0, m * 3)  # Default thickness = 3 * module
     
-    return create_gear_in_alibre(
-        z=z,
-        m=m,
-        alpha_deg=20.0,          # Standard pressure angle
-        thickness=thickness,
-        undercut_auto_suppress=True  # Always prevent undercut
-    )
+def create_internal_gear_in_alibre(z, m, alpha_deg, profile_shift=0.0,
+                            thickness=10.0,
+                            undercut_auto_suppress=False,sketch=None):
+    """
+    Create a complete internal spur gear in Alibre CAD
+    Parameters:
+    - z : int - Number of teeth
+    - m : float - Module (mm)
+    - alpha_deg : float - Pressure angle (degrees)
+    - profile_shift : float - Profile shift coefficient
+    - thickness : float - External thickness (mm)
+    - undercut_auto_suppress : bool - Auto suppress undercut
+    - num_points : int - Points per curve (higher = smoother)
+    """
+    try:
+        # Alibre API functions are directly accessible (no import needed)
+        
+        # Generate the tooth profile using our function
+        print("Generating gear profile: z=" + str(z) + ", m=" + str(m) + ", alpha=" + str(alpha_deg) + "°")
+
+        tooth_profile = generate_internal_tooth_profile(
+                z=z, m=m, alpha_deg=alpha_deg, 
+                thickness=thickness,
+                profile_shift=profile_shift,
+                undercut_auto_suppress=undercut_auto_suppress
+        )
+        
+        params = tooth_profile['parameters']
+        print("Generated profile with pitch radius: " + str(round(params['pitch_radius'], 2)) + "mm")
+
+        # === Create the tooth profile geometry ===
+
+        # 1. Line from involute 1 start to external arc start
+        external_start = tooth_profile['external_arc'][-1]
+        lower_arc_1_start = tooth_profile['lower_arc_1'][-1]
+        involute_to_external = sketch.AddLine(lower_arc_1_start[0], lower_arc_1_start[1], external_start[0], external_start[1], False)
+
+        # 2. External arc
+        external_arc = alibre_arc(sketch, tooth_profile['external_arc'])
+
+        # 3. Line from external arc end to lower arc end
+        external_end = tooth_profile['external_arc'][0]
+        lower_arc_2_end = tooth_profile['lower_arc_2'][-1]
+        external_to_lower = sketch.AddLine(external_end[0], external_end[1], lower_arc_2_end[0], lower_arc_2_end[1], False)
+
+        # 4. Lower dedendum arc
+        lower_arc_1 = alibre_arc(sketch, tooth_profile['lower_arc_1'])
+        lower_arc_2 = alibre_arc(sketch, tooth_profile['lower_arc_2'],reverse=True)
+
+        # 5. Involute_2 spline
+        involute_2_spline = alibre_spline(sketch, tooth_profile['involute_2'])
+
+        # 6. Upper addendum arc
+        upper_arc = alibre_arc(sketch, tooth_profile['upper_arc'])
+
+        # 7. Involute_1 spline
+        involute_1_spline = alibre_spline(sketch, tooth_profile['involute_1'])
+
+        print("Sketch completed successfully")
+
+    except NameError as e:
+        print("Error: Alibre API functions not available. This script must be run within Alibre CAD.")
+        print("Make sure you have an active part open before running this script.")
+        return False, None
+    except Exception as e:
+        print("Error creating gear: " + str(e))
+        return False, None
+        
+
+def create_gear_with_plane(z, m, alpha_deg, plane, profile_shift=0.0, thickness=10.0, internal=False,):
+
+    part = CurrentPart()
+    sketch = part.AddSketch("ToothProfile", plane)
+
+    if internal:
+        create_internal_gear_in_alibre(
+            z=z, m=m, alpha_deg=alpha_deg,
+            profile_shift=profile_shift,
+            thickness=thickness,
+            undercut_auto_suppress=False,
+            sketch=sketch
+        )
+    else:
+        create_external_gear_in_alibre(
+            z=z, m=m, alpha_deg=alpha_deg,
+            profile_shift=profile_shift,
+            undercut_auto_suppress=False,
+            sketch=sketch
+        )
 
 
-def create_fine_pitch_gear(z, m, thickness=None):
-    """Create a fine-pitch gear with higher resolution"""
-    if thickness is None:
-        thickness = max(2.0, m * 2)
+def create_gear_with_sketch(z, m, alpha_deg, sketch, profile_shift=0.0, thickness=10.0, internal=False,):
+
+    # Use of AlibreX API to clear existing sketch figures 
+    Figures = sketch.Figures
+
+    sketch_object = sketch._Sketch
+
+    sketch_object.BeginChange()
+
+    for fig in Figures[:]:
+
+        fig.FigureObject().Delete()
+
+    if internal:
+        create_internal_gear_in_alibre(
+            z=z, m=m, alpha_deg=alpha_deg,
+            profile_shift=profile_shift,
+            thickness=thickness,
+            undercut_auto_suppress=False,
+            sketch=sketch
+        )
+    else:
+        create_external_gear_in_alibre(
+            z=z, m=m, alpha_deg=alpha_deg,
+            profile_shift=profile_shift,
+            undercut_auto_suppress=False,
+            sketch=sketch
+        )
+
+    sketch_object.EndChange()
+
+script_name = "Alibre gear generator enhanced"
+
+Win = Windows()
+
+NumberofTeeth = 20
+Module = 2.0
+PressureAngle = 20.0
+Thickness = 10.0
+ProfileShift = 0.0
+
+Options = []
+Options.append(['Number of Teeth', WindowsInputTypes.Integer, NumberofTeeth])
+Options.append(['Module (mm)', WindowsInputTypes.Real, Module])
+Options.append(['Pressure Angle', WindowsInputTypes.Real, PressureAngle])
+Options.append(['Thickness (mm)', WindowsInputTypes.Real, Thickness])
+Options.append(['Profile shift (mm)', WindowsInputTypes.Real, ProfileShift])
+Options.append(['Optimal profile shift', WindowsInputTypes.Boolean, False])
+Options.append(['Internal Gear', WindowsInputTypes.Boolean, False])
+Options.append(['Label',WindowsInputTypes.Label,'Need to choose plane or sketch below'])
+Options.append(['Application plane',WindowsInputTypes.Plane,None])
+Options.append(['Application sketch',WindowsInputTypes.Sketch,None])
+
+Values = Win.OptionsDialog(script_name, Options, 170)
+
+NumberofTeeth, Module, PressureAngle, Thickness, ProfileShift, OptimalProfileShift, InternalGear,_,Plane,Sketch = Values
+
+if Plane is not None : 
+
+    create_gear_with_plane(
+        NumberofTeeth, 
+        Module, 
+        PressureAngle, 
+        Plane, 
+        ProfileShift, 
+        Thickness, 
+        InternalGear,)
     
-    return create_gear_in_alibre(
-        z=z,
-        m=m,
-        alpha_deg=20.0,
-        thickness=thickness,
-        num_points=60            # Very high resolution for small gears
-    )
+elif Sketch is not None : 
 
+    create_gear_with_sketch(
+        NumberofTeeth, 
+        Module, 
+        PressureAngle, 
+        Sketch, 
+        ProfileShift, 
+        Thickness, 
+        InternalGear,)
 
-
-print("Alibre CAD Gear Generator - IronPython 2.7 Compatible")
-print("=" * 50)
-
-print("Alibre CAD Gear Generator - IronPython 2.7 Compatible")
-print("=" * 50)
-print("")
-print("This script is ready to run in Alibre CAD!")
-print("")
-print("Usage Instructions:")
-print("1. Open Alibre CAD")
-print("2. Create or open a part")
-print("3. Copy and paste this entire script into the Python console")
-print("4. Call one of the gear creation functions:")
-print("")
-print("Examples:")
-print("# Create a standard 20-tooth gear:")
-print("create_standard_gear()")
-print("")
-print("# Create a custom gear:")
-print("create_gear_in_alibre(z=15, m=2.5, alpha_deg=25.0, thickness=12.0)")
-print("")
-print("# Create a small gear with undercut suppression:")
-print("create_small_gear_with_undercut_suppression()")
-print("")
-print("Available functions:")
-print("- create_standard_gear()")
-print("- create_small_gear_with_undercut_suppression()")  
-print("- create_metric_gear(z, m, thickness=None)")
-print("- create_fine_pitch_gear(z, m, thickness=None)")
-print("- create_gear_in_alibre(z, m, alpha_deg, profile_shift, thickness, undercut_auto_suppress, num_points)")
-
-create_standard_gear()
+else: 
+    print("You need to select a plane or a sketch to create the gear")
 # Note: Don't auto-run gear creation when script is loaded
 # Users should call the functions manually in Alibre CAD
