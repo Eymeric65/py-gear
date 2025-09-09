@@ -29,13 +29,12 @@ Dependencies: math (standard library only)
 Compatible with: IronPython 2.7.10.0 (Alibre CAD)
 """
 
-import math
-
+import math 
+import time
 
 def involute_function(angle):
     """Calculate involute function: tan(angle) - angle"""
     return math.tan(angle) - angle
-
 
 def generate_external_tooth_profile(z, m, alpha_deg, profile_shift=0.0, undercut_auto_suppress=False, num_points=[10,10,5,5]):
     """
@@ -85,8 +84,9 @@ def generate_external_tooth_profile(z, m, alpha_deg, profile_shift=0.0, undercut
     dedendum_radius = max(pitch_radius - 1.25 * m, 0.01)
     
     # Handle case where base radius is larger than pitch radius
-    if base_radius / pitch_radius > 1.0:
-        offset_angle = 0.0
+    # Lead to mathematically wrong gear... only occur when profile shift is very high negative...
+    if base_radius > pitch_radius:
+        raise ValueError("Base radius is larger than pitch radius, resulting in invalid gear geometry.")
     else:
         offset_angle = math.acos(base_radius / pitch_radius)
     
@@ -100,6 +100,7 @@ def generate_external_tooth_profile(z, m, alpha_deg, profile_shift=0.0, undercut
     addendum_involute_angle = math.acos(base_radius / addendum_radius)
     max_involute_angle = addendum_involute_angle + involute_function(addendum_involute_angle)
 
+    # Calculate dedendum involute angle only if base radius is smaller than dedendum radius otherwise set to 0 and add undercut.
     if base_radius < dedendum_radius:
 
         deddendum_involute_angle = math.acos(base_radius / dedendum_radius)
@@ -282,8 +283,9 @@ def generate_internal_tooth_profile(z, m, alpha_deg, thickness, profile_shift=0.
     dedendum_radius = max(pitch_radius + 1.25 * m, 0.01)
     
     # Handle case where base radius is larger than pitch radius
-    if base_radius > pitch_radius :
-        offset_angle = 0.0
+    # Lead to mathematically wrong gear... only occur when profile shift is very high negative...
+    if base_radius > pitch_radius:
+        raise ValueError("Base radius is larger than pitch radius, resulting in invalid gear geometry.")
     else:
         offset_angle = math.acos(base_radius / pitch_radius)
     
@@ -513,6 +515,7 @@ def create_external_gear_in_alibre(z, m, alpha_deg, profile_shift=0.0,
         
         # Close the sketch
         print("Sketch completed successfully")
+        return tooth_profile['parameters']
         
         
     except NameError as e:
@@ -582,6 +585,7 @@ def create_internal_gear_in_alibre(z, m, alpha_deg, profile_shift=0.0,
         involute_1_spline = alibre_spline(sketch, tooth_profile['involute_1'])
 
         print("Sketch completed successfully")
+        return tooth_profile['parameters']
 
     except NameError as e:
         print("Error: Alibre API functions not available. This script must be run within Alibre CAD.")
@@ -594,11 +598,14 @@ def create_internal_gear_in_alibre(z, m, alpha_deg, profile_shift=0.0,
 
 def create_gear_with_plane(z, m, alpha_deg, plane, profile_shift=0.0, thickness=10.0, internal=False,):
 
+    name = "gear1"
+
     part = CurrentPart()
-    sketch = part.AddSketch("ToothProfile", plane)
+
+    sketch = part.AddSketch(name, plane)
 
     if internal:
-        create_internal_gear_in_alibre(
+        parameters=create_internal_gear_in_alibre(
             z=z, m=m, alpha_deg=alpha_deg,
             profile_shift=profile_shift,
             thickness=thickness,
@@ -606,12 +613,23 @@ def create_gear_with_plane(z, m, alpha_deg, plane, profile_shift=0.0, thickness=
             sketch=sketch
         )
     else:
-        create_external_gear_in_alibre(
+        parameters=create_external_gear_in_alibre(
             z=z, m=m, alpha_deg=alpha_deg,
             profile_shift=profile_shift,
             undercut_auto_suppress=False,
             sketch=sketch
         )
+
+    
+    p2=part.AddParameter(name+"_pitch_radius",ParameterTypes.Distance, float(parameters['pitch_radius']))
+    time.sleep(1) # Wait a bit to ensure parameter is registered
+    p1=part.AddParameter(name+"_z",ParameterTypes.Count, int(parameters['z']))
+    time.sleep(1) # Wait a bit to ensure parameter is registered
+    part.Regenerate()
+
+
+
+    
 
 
 def create_gear_with_sketch(z, m, alpha_deg, sketch, profile_shift=0.0, thickness=10.0, internal=False,):
@@ -628,7 +646,7 @@ def create_gear_with_sketch(z, m, alpha_deg, sketch, profile_shift=0.0, thicknes
         fig.FigureObject().Delete()
 
     if internal:
-        create_internal_gear_in_alibre(
+        parameters=create_internal_gear_in_alibre(
             z=z, m=m, alpha_deg=alpha_deg,
             profile_shift=profile_shift,
             thickness=thickness,
@@ -636,7 +654,7 @@ def create_gear_with_sketch(z, m, alpha_deg, sketch, profile_shift=0.0, thicknes
             sketch=sketch
         )
     else:
-        create_external_gear_in_alibre(
+        parameters=create_external_gear_in_alibre(
             z=z, m=m, alpha_deg=alpha_deg,
             profile_shift=profile_shift,
             undercut_auto_suppress=False,
@@ -644,6 +662,20 @@ def create_gear_with_sketch(z, m, alpha_deg, sketch, profile_shift=0.0, thicknes
         )
 
     sketch_object.EndChange()
+
+    name = Sketch.Name
+
+    part = Sketch.GetPart()
+
+    p1=part.GetParameter(name+"_pitch_radius")
+    p1.Value = float(parameters['pitch_radius'])
+    
+    time.sleep(0.1) # Wait a bit to ensure parameter is registered
+    p2=part.GetParameter(name+"_z")
+    p2.Value = int(parameters['z'])
+    time.sleep(0.1) # Wait a bit to ensure parameter is registered
+    part.Regenerate()
+    
 
 script_name = "Alibre gear generator enhanced"
 
