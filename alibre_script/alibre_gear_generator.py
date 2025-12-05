@@ -36,6 +36,17 @@ def involute_function(angle):
     """Calculate involute function: tan(angle) - angle"""
     return math.tan(angle) - angle
 
+def rotate_points(points, angle):
+    """Rotate a list of (x, y) points by the given angle in radians"""
+    cos_a = math.cos(angle)
+    sin_a = math.sin(angle)
+    rotated = []
+    for x, y in points:
+        x_rot = x * cos_a - y * sin_a
+        y_rot = x * sin_a + y * cos_a
+        rotated.append((x_rot, y_rot))
+    return rotated
+
 def generate_external_tooth_profile(z, m, alpha_deg, profile_shift=0.0, undercut_auto_suppress=False, num_points=[10,10,5,5]):
     """
     Generate the profile of one tooth consisting of 6 parts.
@@ -214,6 +225,15 @@ def generate_external_tooth_profile(z, m, alpha_deg, profile_shift=0.0, undercut
         x_arc = dedendum_radius * math.cos(theta_arc)
         y_arc = dedendum_radius * math.sin(theta_arc)
         lower_arc.append((x_arc, y_arc))
+
+    # Rotate all profiles by half tooth angle to center tooth on x-axis
+    rotation_angle = -tooth_angle/2
+    trochoid_1 = rotate_points(trochoid_1, rotation_angle)
+    involute_1 = rotate_points(involute_1, rotation_angle)
+    upper_arc = rotate_points(upper_arc, rotation_angle)
+    involute_2 = rotate_points(involute_2, rotation_angle)
+    trochoid_2 = rotate_points(trochoid_2, rotation_angle)
+    lower_arc = rotate_points(lower_arc, rotation_angle)
     
     return {
         'trochoid_1': trochoid_1,
@@ -390,6 +410,15 @@ def generate_internal_tooth_profile(z, m, alpha_deg, thickness, profile_shift=0.
         x_arc = (dedendum_radius+thickness) * math.cos(theta_arc)
         y_arc = (dedendum_radius+thickness) * math.sin(theta_arc)
         external_arc.append((x_arc, y_arc))
+
+    # Rotate all profiles by half tooth angle to center tooth on x-axis
+    rotation_angle = -tooth_angle/2
+    involute_1 = rotate_points(involute_1, rotation_angle)
+    upper_arc = rotate_points(upper_arc, rotation_angle)
+    involute_2 = rotate_points(involute_2, rotation_angle)
+    lower_arc_1 = rotate_points(lower_arc_1, rotation_angle)
+    lower_arc_2 = rotate_points(lower_arc_2, rotation_angle)
+    external_arc = rotate_points(external_arc, rotation_angle)
 
     return {
         'involute_1': involute_1,
@@ -599,9 +628,7 @@ def create_internal_gear_in_alibre(z, m, alpha_deg, profile_shift=0.0,
 def create_gear_with_plane(z, m, alpha_deg, plane, profile_shift=0.0, thickness=10.0, internal=False,):
 
     name = "gear1"
-
     part = CurrentPart()
-
     sketch = part.AddSketch(name, plane)
 
     if internal:
@@ -620,17 +647,11 @@ def create_gear_with_plane(z, m, alpha_deg, plane, profile_shift=0.0, thickness=
             sketch=sketch
         )
 
-    
     p2=part.AddParameter(name+"_pitch_radius",ParameterTypes.Distance, float(parameters['pitch_radius']))
     time.sleep(1) # Wait a bit to ensure parameter is registered
     p1=part.AddParameter(name+"_z",ParameterTypes.Count, int(parameters['z']))
     time.sleep(1) # Wait a bit to ensure parameter is registered
     part.Regenerate()
-
-
-
-    
-
 
 def create_gear_with_sketch(z, m, alpha_deg, sketch, profile_shift=0.0, thickness=10.0, internal=False,):
 
