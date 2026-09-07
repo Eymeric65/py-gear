@@ -121,3 +121,75 @@ profile = generate_tooth_profile(z=8, m=2.0, alpha_deg=20.0, undercut_auto_suppr
 - The function handles edge cases like undercut conditions
 - Profile shift positive values make teeth thicker, negative values make them thinner
 - The function is optimized for CAD integration with minimal dependencies
+
+---
+
+# Belt Gear Profile
+
+A belt gear is a pulley for a perforated belt: the full part of the belt lies flat on the
+pulley surface while the teeth rise through the holes.
+
+## Function Signature
+
+```python
+def generate_belt_tooth_profile(z, belt_hole, belt_full, tooth_height, num_points=[10,5,5]):
+```
+
+## Parameters
+
+- **z** (int): Number of teeth
+- **belt_hole** (float): Width of the hole in the belt in mm, measured on the pulley surface
+- **belt_full** (float): Width of the full part of the belt in mm, measured on the pulley
+  surface. This is the tooth footprint.
+- **tooth_height** (float): Height of the tooth above the pulley surface in mm
+- **num_points** (list of int): Points per segment, order `[involute, addendum, deddundum]`
+
+## Radius
+
+The radius is **not** an input, it is imposed by the belt: one perimeter is exactly `z` belt
+pitches.
+
+```
+belt_pitch   = belt_hole + belt_full
+pitch_radius = z * belt_pitch / (2 * pi)
+```
+
+The pulley surface is also the base circle of both involute flanks, so
+`base_radius == dedendum_radius == pitch_radius` and `addendum_radius = pitch_radius + tooth_height`.
+
+Both flanks are involutes of the same circle, so the tooth narrows as it rises. If
+`tooth_height` is large enough for the two flanks to cross, a `ValueError` is raised giving
+the maximum usable tooth height.
+
+## Return Value
+
+```python
+{
+    'involute_1': [(x1, y1), ...],   # Rising flank
+    'upper_arc':  [(x1, y1), ...],   # Tooth tip arc
+    'involute_2': [(x1, y1), ...],   # Falling flank
+    'lower_arc':  [(x1, y1), ...],   # Land the full part of the belt lies on
+    'parameters': {
+        'z', 'belt_hole', 'belt_full', 'tooth_height', 'belt_pitch',
+        'pitch_radius', 'base_radius', 'addendum_radius', 'dedendum_radius'
+    }
+}
+```
+
+## Tooth Profile Order
+
+One complete tooth consists of these 4 parts connected in sequence:
+1. **involute_1** → **upper_arc** → **involute_2** → **lower_arc**
+
+The profile is centred on the X axis and one pattern step is `2*pi/z`.
+
+## Example
+
+```python
+# 20 teeth, 3 mm holes on a 6 mm belt pitch, 2 mm tall teeth
+profile = generate_belt_tooth_profile(z=20, belt_hole=3.0, belt_full=3.0, tooth_height=2.0)
+print(profile['parameters']['pitch_radius'])   # 19.0986 mm
+```
+
+In Alibre, tick *Belt Gear* in the script dialog and fill in *Belt hole width*,
+*Belt full width* and *Tooth height*; module, pressure angle and profile shift are ignored.
