@@ -395,6 +395,158 @@ def generate_internal_tooth_profile(z, m, alpha_deg, thickness, profile_shift=0.
     }
 
 
+def generate_belt_tooth_profile(z, belt_hole, belt_full, tooth_height, num_points=[10,5,5]):
+    """
+    Generate the profile of one belt gear tooth consisting of 4 parts.
+
+    A belt gear drives a perforated belt: the full part of the belt lies flat on the
+    pulley surface while the teeth rise through the holes. The radius is therefore not
+    a free parameter, it is imposed by the belt pitch:
+    perimeter = (belt_hole + belt_full) * z.
+
+    Parameters:
+    -----------
+    z : int
+        Number of teeth
+    belt_hole : float
+        Width of the hole in the belt (mm), measured on the pulley surface
+    belt_full : float
+        Width of the full part of the belt (mm), measured on the pulley surface.
+        This is the tooth footprint.
+    tooth_height : float
+        Height of the tooth above the pulley surface (mm)
+    num_points : list of int
+        Number of points per curve segment, order is following : [involute,addendum,deddundum] (default: [10, 5, 5])
+
+    Returns:
+    --------
+    dict containing the 4 profile parts:
+        'involute_1': [(x1, y1), (x2, y2), ...] - First involute curve (rising flank)
+        'upper_arc': [(x1, y1), (x2, y2), ...] - Upper tip arc
+        'involute_2': [(x1, y1), (x2, y2), ...] - Second involute curve (falling flank)
+        'lower_arc': [(x1, y1), (x2, y2), ...] - Lower arc, the land the belt lies on
+    """
+
+    if z < 1:
+        raise ValueError("Number of teeth must be at least 1.")
+    if belt_hole <= 0.0 or belt_full <= 0.0:
+        raise ValueError("Belt hole and belt full widths must be strictly positive.")
+    if tooth_height <= 0.0:
+        raise ValueError("Tooth height must be strictly positive.")
+
+    # The belt imposes the radius: one perimeter is exactly z belt pitches
+    belt_pitch = belt_hole + belt_full
+    pitch_radius = z * belt_pitch / (2.0 * math.pi)
+
+    # The pulley surface is both the land the belt lies on and the base circle
+    # of the two involute flanks, so base = dedendum = pitch radius here.
+    base_radius = pitch_radius
+    dedendum_radius = pitch_radius
+    addendum_radius = pitch_radius + tooth_height
+
+    # Angular dimensions (the tooth footprint is the full part of the belt)
+    angular_tooth_width = belt_full / pitch_radius
+    angular_gap_width = belt_hole / pitch_radius
+
+    # Involute parameter at the tip: theta = tan(alpha) with cos(alpha) = base/tip
+    max_involute_angle = math.sqrt((addendum_radius / base_radius) ** 2 - 1.0)
+    involute_at_addendum = max_involute_angle - math.atan(max_involute_angle)
+
+    # Both flanks are involutes of the same circle, so the tooth narrows as it rises.
+    # Above a certain height the two flanks cross and the tooth becomes pointed.
+    if angular_tooth_width - 2 * involute_at_addendum <= 0.0:
+        # Bisect theta - atan(theta) = angular_tooth_width/2 to report the usable height
+        theta_low = 0.0
+        theta_high = 1.0
+        while theta_high - math.atan(theta_high) < angular_tooth_width / 2.0:
+            theta_high = theta_high * 2.0
+        for _ in range(80):
+            theta_mid = 0.5 * (theta_low + theta_high)
+            if theta_mid - math.atan(theta_mid) < angular_tooth_width / 2.0:
+                theta_low = theta_mid
+            else:
+                theta_high = theta_mid
+        max_tooth_height = base_radius * math.sqrt(1.0 + theta_high ** 2) - base_radius
+        raise ValueError("Tooth height " + str(round(tooth_height, 3)) +
+                         "mm makes the tooth pointed, maximum usable tooth height is " +
+                         str(round(max_tooth_height, 3)) + "mm.")
+
+    # Tooth positioning angle (negative = clockwise, same convention as the spur gears)
+    tooth_angle = -angular_tooth_width
+
+    # === Generate Involute Curves ===
+    involute_1 = []
+    involute_2 = []
+
+    for i in range(num_points[0]):
+        t = float(i) / (num_points[0] - 1)
+        theta = t * max_involute_angle
+
+        # Basic involute coordinates
+        x_inv = base_radius * (math.cos(theta) + theta * math.sin(theta))
+        y_inv = base_radius * (math.sin(theta) - theta * math.cos(theta))
+
+        # First involute (rotated by tooth_angle)
+        cos_tooth = math.cos(tooth_angle)
+        sin_tooth = math.sin(tooth_angle)
+        x1 = x_inv * cos_tooth - y_inv * sin_tooth
+        y1 = x_inv * sin_tooth + y_inv * cos_tooth
+        involute_2.append((x1, y1))
+
+        # Second involute (mirrored in y, no rotation)
+        involute_1.append((x_inv, -y_inv))
+
+    # === Generate Arc Segments ===
+
+    # Upper arc (tooth tip)
+    upper_arc = []
+    start_angle_upper = -involute_at_addendum
+    end_angle_upper = tooth_angle + involute_at_addendum
+
+    for i in range(num_points[1]):
+        t = float(i) / (num_points[1] - 1)
+        theta_arc = start_angle_upper + t * (end_angle_upper - start_angle_upper)
+        x_arc = addendum_radius * math.cos(theta_arc)
+        y_arc = addendum_radius * math.sin(theta_arc)
+        upper_arc.append((x_arc, y_arc))
+
+    # Lower arc (the land the full part of the belt lies on)
+    lower_arc = []
+    start_angle_lower = tooth_angle
+    end_angle_lower = -(angular_tooth_width + angular_gap_width)
+
+    for i in range(num_points[2]):
+        t = float(i) / (num_points[2] - 1)
+        theta_arc = start_angle_lower + t * (end_angle_lower - start_angle_lower)
+        x_arc = dedendum_radius * math.cos(theta_arc)
+        y_arc = dedendum_radius * math.sin(theta_arc)
+        lower_arc.append((x_arc, y_arc))
+
+    # Rotate all profiles by half tooth angle to center tooth on x-axis
+    rotation_angle = -tooth_angle/2
+    involute_1 = rotate_profile_part(involute_1, rotation_angle)
+    upper_arc = rotate_profile_part(upper_arc, rotation_angle)
+    involute_2 = rotate_profile_part(involute_2, rotation_angle)
+    lower_arc = rotate_profile_part(lower_arc, rotation_angle)
+
+    return {
+        'involute_1': involute_1,
+        'upper_arc': upper_arc,
+        'involute_2': involute_2,
+        'lower_arc': lower_arc,
+        'parameters': {
+            'z': z,
+            'belt_hole': belt_hole,
+            'belt_full': belt_full,
+            'tooth_height': tooth_height,
+            'belt_pitch': belt_pitch,
+            'pitch_radius': pitch_radius,
+            'base_radius': base_radius,
+            'addendum_radius': addendum_radius,
+            'dedendum_radius': dedendum_radius
+        }
+    }
+
 def rotate_point(x, y, angle):
     """Rotate a point by given angle (radians)"""
     cos_a = math.cos(angle)
@@ -423,9 +575,18 @@ if __name__ == "__main__":
     num_points = [10, 10, 5, 5]  # Number of points per segment
 
     external= True
-    
+
+    # Belt gear parameters (used when belt is True, m/alpha_deg/profile_shift are ignored)
+    belt = False
+    belt_hole = 3.0          # width of the hole in the belt (mm)
+    belt_full = 3.0          # width of the full part of the belt (mm)
+    tooth_height = 2.0       # height of the tooth above the pulley surface (mm)
+    belt_num_points = [10, 5, 5]
+
     # Generate one tooth profile
-    if external:
+    if belt:
+        tooth_profile = generate_belt_tooth_profile(z, belt_hole, belt_full, tooth_height, num_points=belt_num_points)
+    elif external:
         tooth_profile = generate_external_tooth_profile(z, m, alpha_deg, profile_shift, undercut_auto_suppress,num_points=num_points)
     else:
         tooth_profile = generate_internal_tooth_profile(z, m, alpha_deg, thickness, profile_shift, undercut_auto_suppress,num_points=num_points)
@@ -456,7 +617,10 @@ if __name__ == "__main__":
         tooth_angle = i * 2 * math.pi / z
         
         # Rotate and plot each part of the tooth profile
-        if external:
+        if belt:
+            parts = ['involute_1', 'upper_arc', 'involute_2', 'lower_arc']
+            colors = ['black', 'black', 'black', 'black']
+        elif external:
             parts = ['trochoid_1', 'involute_1', 'upper_arc', 'involute_2', 'trochoid_2', 'lower_arc']
             colors = ['black', 'black', 'black', 'black', 'black', 'black']  # Changed upper_arc to cyan and lower_arc to brown
         else:
@@ -475,7 +639,9 @@ if __name__ == "__main__":
     
     # Set equal aspect ratio and limits
     ax.set_aspect('equal')
-    if external:
+    if belt:
+        margin = params['addendum_radius'] + tooth_height
+    elif external:
         margin = params['addendum_radius'] + m
     else:
         margin = params['dedendum_radius'] + m + thickness
@@ -486,7 +652,10 @@ if __name__ == "__main__":
     ax.grid(True, alpha=0.3)
     ax.set_xlabel('X (mm)')
     ax.set_ylabel('Y (mm)')
-    ax.set_title(f'Complete Gear Profile (z={z}, m={m}, α={alpha_deg}°, shift={profile_shift})')
+    if belt:
+        ax.set_title(f'Complete Belt Gear Profile (z={z}, hole={belt_hole}, full={belt_full}, h={tooth_height})')
+    else:
+        ax.set_title(f'Complete Gear Profile (z={z}, m={m}, α={alpha_deg}°, shift={profile_shift})')
     ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     
     plt.tight_layout()
@@ -495,9 +664,15 @@ if __name__ == "__main__":
     # Print some information
     print(f"Generated gear profile:")
     print(f"  Number of teeth: {z}")
-    print(f"  Module: {m} mm")
-    print(f"  Pressure angle: {alpha_deg}°")
-    print(f"  Profile shift: {profile_shift}")
+    if belt:
+        print(f"  Belt hole width: {belt_hole} mm")
+        print(f"  Belt full width: {belt_full} mm")
+        print(f"  Belt pitch: {params['belt_pitch']} mm")
+        print(f"  Tooth height: {tooth_height} mm")
+    else:
+        print(f"  Module: {m} mm")
+        print(f"  Pressure angle: {alpha_deg}°")
+        print(f"  Profile shift: {profile_shift}")
     print(f"  Pitch radius: {params['pitch_radius']:.2f} mm")
     print(f"  Base radius: {params['base_radius']:.2f} mm")
     print(f"  Addendum radius: {params['addendum_radius']:.2f} mm")

@@ -439,6 +439,158 @@ def generate_internal_tooth_profile(z, m, alpha_deg, thickness, profile_shift=0.
         }
     }
 
+def generate_belt_tooth_profile(z, belt_hole, belt_full, tooth_height, num_points=[10,5,5]):
+    """
+    Generate the profile of one belt gear tooth consisting of 4 parts.
+
+    A belt gear drives a perforated belt: the full part of the belt lies flat on the
+    pulley surface while the teeth rise through the holes. The radius is therefore not
+    a free parameter, it is imposed by the belt pitch:
+    perimeter = (belt_hole + belt_full) * z.
+
+    Parameters:
+    -----------
+    z : int
+        Number of teeth
+    belt_hole : float
+        Width of the hole in the belt (mm), measured on the pulley surface
+    belt_full : float
+        Width of the full part of the belt (mm), measured on the pulley surface.
+        This is the tooth footprint.
+    tooth_height : float
+        Height of the tooth above the pulley surface (mm)
+    num_points : list of int
+        Number of points per curve segment, order is following : [involute,addendum,deddundum] (default: [10, 5, 5])
+
+    Returns:
+    --------
+    dict containing the 4 profile parts:
+        'involute_1': [(x1, y1), (x2, y2), ...] - First involute curve (rising flank)
+        'upper_arc': [(x1, y1), (x2, y2), ...] - Upper tip arc
+        'involute_2': [(x1, y1), (x2, y2), ...] - Second involute curve (falling flank)
+        'lower_arc': [(x1, y1), (x2, y2), ...] - Lower arc, the land the belt lies on
+    """
+
+    if z < 1:
+        raise ValueError("Number of teeth must be at least 1.")
+    if belt_hole <= 0.0 or belt_full <= 0.0:
+        raise ValueError("Belt hole and belt full widths must be strictly positive.")
+    if tooth_height <= 0.0:
+        raise ValueError("Tooth height must be strictly positive.")
+
+    # The belt imposes the radius: one perimeter is exactly z belt pitches
+    belt_pitch = belt_hole + belt_full
+    pitch_radius = z * belt_pitch / (2.0 * math.pi)
+
+    # The pulley surface is both the land the belt lies on and the base circle
+    # of the two involute flanks, so base = dedendum = pitch radius here.
+    base_radius = pitch_radius
+    dedendum_radius = pitch_radius
+    addendum_radius = pitch_radius + tooth_height
+
+    # Angular dimensions (the tooth footprint is the full part of the belt)
+    angular_tooth_width = belt_full / pitch_radius
+    angular_gap_width = belt_hole / pitch_radius
+
+    # Involute parameter at the tip: theta = tan(alpha) with cos(alpha) = base/tip
+    max_involute_angle = math.sqrt((addendum_radius / base_radius) ** 2 - 1.0)
+    involute_at_addendum = max_involute_angle - math.atan(max_involute_angle)
+
+    # Both flanks are involutes of the same circle, so the tooth narrows as it rises.
+    # Above a certain height the two flanks cross and the tooth becomes pointed.
+    if angular_tooth_width - 2 * involute_at_addendum <= 0.0:
+        # Bisect theta - atan(theta) = angular_tooth_width/2 to report the usable height
+        theta_low = 0.0
+        theta_high = 1.0
+        while theta_high - math.atan(theta_high) < angular_tooth_width / 2.0:
+            theta_high = theta_high * 2.0
+        for _ in range(80):
+            theta_mid = 0.5 * (theta_low + theta_high)
+            if theta_mid - math.atan(theta_mid) < angular_tooth_width / 2.0:
+                theta_low = theta_mid
+            else:
+                theta_high = theta_mid
+        max_tooth_height = base_radius * math.sqrt(1.0 + theta_high ** 2) - base_radius
+        raise ValueError("Tooth height " + str(round(tooth_height, 3)) +
+                         "mm makes the tooth pointed, maximum usable tooth height is " +
+                         str(round(max_tooth_height, 3)) + "mm.")
+
+    # Tooth positioning angle (negative = clockwise, same convention as the spur gears)
+    tooth_angle = -angular_tooth_width
+
+    # === Generate Involute Curves ===
+    involute_1 = []
+    involute_2 = []
+
+    for i in range(num_points[0]):
+        t = float(i) / (num_points[0] - 1)
+        theta = t * max_involute_angle
+
+        # Basic involute coordinates
+        x_inv = base_radius * (math.cos(theta) + theta * math.sin(theta))
+        y_inv = base_radius * (math.sin(theta) - theta * math.cos(theta))
+
+        # First involute (rotated by tooth_angle)
+        cos_tooth = math.cos(tooth_angle)
+        sin_tooth = math.sin(tooth_angle)
+        x1 = x_inv * cos_tooth - y_inv * sin_tooth
+        y1 = x_inv * sin_tooth + y_inv * cos_tooth
+        involute_2.append((x1, y1))
+
+        # Second involute (mirrored in y, no rotation)
+        involute_1.append((x_inv, -y_inv))
+
+    # === Generate Arc Segments ===
+
+    # Upper arc (tooth tip)
+    upper_arc = []
+    start_angle_upper = -involute_at_addendum
+    end_angle_upper = tooth_angle + involute_at_addendum
+
+    for i in range(num_points[1]):
+        t = float(i) / (num_points[1] - 1)
+        theta_arc = start_angle_upper + t * (end_angle_upper - start_angle_upper)
+        x_arc = addendum_radius * math.cos(theta_arc)
+        y_arc = addendum_radius * math.sin(theta_arc)
+        upper_arc.append((x_arc, y_arc))
+
+    # Lower arc (the land the full part of the belt lies on)
+    lower_arc = []
+    start_angle_lower = tooth_angle
+    end_angle_lower = -(angular_tooth_width + angular_gap_width)
+
+    for i in range(num_points[2]):
+        t = float(i) / (num_points[2] - 1)
+        theta_arc = start_angle_lower + t * (end_angle_lower - start_angle_lower)
+        x_arc = dedendum_radius * math.cos(theta_arc)
+        y_arc = dedendum_radius * math.sin(theta_arc)
+        lower_arc.append((x_arc, y_arc))
+
+    # Rotate all profiles by half tooth angle to center tooth on x-axis
+    rotation_angle = -tooth_angle/2
+    involute_1 = rotate_points(involute_1, rotation_angle)
+    upper_arc = rotate_points(upper_arc, rotation_angle)
+    involute_2 = rotate_points(involute_2, rotation_angle)
+    lower_arc = rotate_points(lower_arc, rotation_angle)
+
+    return {
+        'involute_1': involute_1,
+        'upper_arc': upper_arc,
+        'involute_2': involute_2,
+        'lower_arc': lower_arc,
+        'parameters': {
+            'z': z,
+            'belt_hole': belt_hole,
+            'belt_full': belt_full,
+            'tooth_height': tooth_height,
+            'belt_pitch': belt_pitch,
+            'pitch_radius': pitch_radius,
+            'base_radius': base_radius,
+            'addendum_radius': addendum_radius,
+            'dedendum_radius': dedendum_radius
+        }
+    }
+
 def alibre_arc(sketch, arc, reverse = False):
 
     if reverse:
@@ -625,13 +777,87 @@ def create_internal_gear_in_alibre(z, m, alpha_deg, profile_shift=0.0,
         return False, None
         
 
-def create_gear_with_plane(z, m, alpha_deg, plane, profile_shift=0.0, thickness=10.0, internal=False,):
+def create_belt_gear_in_alibre(z, belt_hole, belt_full, tooth_height, sketch=None):
+    """
+    Create a complete belt gear (pulley for a perforated belt) in Alibre CAD
+
+    Parameters:
+    -----------
+    z : int - Number of teeth
+    belt_hole : float - Width of the hole in the belt (mm)
+    belt_full : float - Width of the full part of the belt (mm)
+    tooth_height : float - Height of the tooth above the pulley surface (mm)
+
+    Returns:
+    --------
+    The profile parameters dict
+    """
+
+    try:
+        # Alibre API functions are directly accessible (no import needed)
+
+        # Generate the tooth profile using our function
+        print("Generating belt gear profile: z=" + str(z) + ", hole=" + str(belt_hole) +
+              "mm, full=" + str(belt_full) + "mm, height=" + str(tooth_height) + "mm")
+
+        tooth_profile = generate_belt_tooth_profile(
+                z=z, belt_hole=belt_hole, belt_full=belt_full,
+                tooth_height=tooth_height
+        )
+
+        params = tooth_profile['parameters']
+        print("Generated profile with pitch radius: " + str(round(params['pitch_radius'], 2)) + "mm")
+
+        # === Create the tooth profile geometry ===
+
+        # 1. Line from center (0,0) to start of involute_1 (on the pulley surface)
+        involute_start = tooth_profile['involute_1'][0]
+        center_to_involute = sketch.AddLine(0, 0, involute_start[0], involute_start[1], False)
+
+        # 2. Involute_1 spline (rising flank)
+        involute_1_spline = alibre_spline(sketch, tooth_profile['involute_1'])
+
+        # 3. Upper tip arc
+        upper_arc = alibre_arc(sketch, tooth_profile['upper_arc'])
+
+        # 4. Involute_2 spline (falling flank)
+        involute_2_spline = alibre_spline(sketch, tooth_profile['involute_2'])
+
+        # 5. Lower arc (the land the full part of the belt lies on)
+        lower_arc = alibre_arc(sketch, tooth_profile['lower_arc'])
+
+        # 6. Line from end of lower arc back to center
+        arc_end = tooth_profile['lower_arc'][-1]
+        arc_to_center = sketch.AddLine(arc_end[0], arc_end[1], 0, 0, False)
+        print("  Created return line from lower arc to center: (" +
+                str(round(arc_end[0], 3)) + ", " + str(round(arc_end[1], 3)) + ") -> (0,0)")
+
+        # Close the sketch
+        print("Sketch completed successfully")
+        return tooth_profile['parameters']
+
+    except NameError as e:
+        print("Error: Alibre API functions not available. This script must be run within Alibre CAD.")
+        print("Make sure you have an active part open before running this script.")
+        return False, None
+    except Exception as e:
+        print("Error creating belt gear: " + str(e))
+        return False, None
+
+def create_gear_with_plane(z, m, alpha_deg, plane, profile_shift=0.0, thickness=10.0, internal=False,
+                           belt=False, belt_hole=3.0, belt_full=3.0, tooth_height=2.0,):
 
     name = "gear1"
     part = CurrentPart()
     sketch = part.AddSketch(name, plane)
 
-    if internal:
+    if belt:
+        parameters=create_belt_gear_in_alibre(
+            z=z, belt_hole=belt_hole, belt_full=belt_full,
+            tooth_height=tooth_height,
+            sketch=sketch
+        )
+    elif internal:
         parameters=create_internal_gear_in_alibre(
             z=z, m=m, alpha_deg=alpha_deg,
             profile_shift=profile_shift,
@@ -653,7 +879,8 @@ def create_gear_with_plane(z, m, alpha_deg, plane, profile_shift=0.0, thickness=
     time.sleep(1) # Wait a bit to ensure parameter is registered
     part.Regenerate()
 
-def create_gear_with_sketch(z, m, alpha_deg, sketch, profile_shift=0.0, thickness=10.0, internal=False,):
+def create_gear_with_sketch(z, m, alpha_deg, sketch, profile_shift=0.0, thickness=10.0, internal=False,
+                            belt=False, belt_hole=3.0, belt_full=3.0, tooth_height=2.0,):
 
     # Use of AlibreX API to clear existing sketch figures 
     Figures = sketch.Figures
@@ -666,7 +893,13 @@ def create_gear_with_sketch(z, m, alpha_deg, sketch, profile_shift=0.0, thicknes
 
         fig.FigureObject().Delete()
 
-    if internal:
+    if belt:
+        parameters=create_belt_gear_in_alibre(
+            z=z, belt_hole=belt_hole, belt_full=belt_full,
+            tooth_height=tooth_height,
+            sketch=sketch
+        )
+    elif internal:
         parameters=create_internal_gear_in_alibre(
             z=z, m=m, alpha_deg=alpha_deg,
             profile_shift=profile_shift,
@@ -684,9 +917,9 @@ def create_gear_with_sketch(z, m, alpha_deg, sketch, profile_shift=0.0, thicknes
 
     sketch_object.EndChange()
 
-    name = Sketch.Name
+    name = sketch.Name
 
-    part = Sketch.GetPart()
+    part = sketch.GetPart()
 
     p1=part.GetParameter(name+"_pitch_radius")
     p1.Value = float(parameters['pitch_radius'])
@@ -707,6 +940,9 @@ Module = 2.0
 PressureAngle = 20.0
 Thickness = 10.0
 ProfileShift = 0.0
+BeltHole = 3.0
+BeltFull = 3.0
+ToothHeight = 2.0
 
 Options = []
 Options.append(['Number of Teeth', WindowsInputTypes.Integer, NumberofTeeth])
@@ -716,13 +952,18 @@ Options.append(['Thickness (mm)', WindowsInputTypes.Real, Thickness])
 Options.append(['Profile shift (mm)', WindowsInputTypes.Real, ProfileShift])
 Options.append(['Optimal profile shift', WindowsInputTypes.Boolean, False])
 Options.append(['Internal Gear', WindowsInputTypes.Boolean, False])
+Options.append(['Label',WindowsInputTypes.Label,'Belt gear uses the 3 values below instead of module/pressure angle/profile shift'])
+Options.append(['Belt Gear', WindowsInputTypes.Boolean, False])
+Options.append(['Belt hole width (mm)', WindowsInputTypes.Real, BeltHole])
+Options.append(['Belt full width (mm)', WindowsInputTypes.Real, BeltFull])
+Options.append(['Tooth height (mm)', WindowsInputTypes.Real, ToothHeight])
 Options.append(['Label',WindowsInputTypes.Label,'Need to choose plane or sketch below'])
 Options.append(['Application plane',WindowsInputTypes.Plane,None])
 Options.append(['Application sketch',WindowsInputTypes.Sketch,None])
 
 Values = Win.OptionsDialog(script_name, Options, 170)
 
-NumberofTeeth, Module, PressureAngle, Thickness, ProfileShift, OptimalProfileShift, InternalGear,_,Plane,Sketch = Values
+NumberofTeeth, Module, PressureAngle, Thickness, ProfileShift, OptimalProfileShift, InternalGear,_,BeltGear,BeltHole,BeltFull,ToothHeight,_,Plane,Sketch = Values
 
 if Plane is not None : 
 
@@ -733,7 +974,11 @@ if Plane is not None :
         Plane, 
         ProfileShift, 
         Thickness, 
-        InternalGear,)
+        InternalGear,
+        BeltGear,
+        BeltHole,
+        BeltFull,
+        ToothHeight,)
     
 elif Sketch is not None : 
 
@@ -744,7 +989,11 @@ elif Sketch is not None :
         Sketch, 
         ProfileShift, 
         Thickness, 
-        InternalGear,)
+        InternalGear,
+        BeltGear,
+        BeltHole,
+        BeltFull,
+        ToothHeight,)
 
 else: 
     print("You need to select a plane or a sketch to create the gear")
