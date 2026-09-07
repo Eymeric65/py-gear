@@ -55,7 +55,8 @@ def generate_belt_tooth_profile(z, belt_pitch, pld, hole_width, over_thickness, 
     pld : float - Pitch line differential = belt thickness / 2 (mm)
     hole_width : float - Width of the belt cutout along the pitch line (mm)
     over_thickness : float - How much the involute grows past the upper PLD (mm)
-    alpha_deg : float - Pressure angle of the belt / rectangular profile (degrees)
+    alpha_deg : float - Pressure angle of the belt / rectangular profile (degrees).
+        0 is allowed and means a plain rectangular footprint (radial flanks).
     num_points : list of int - Points per segment [involute,trochoid,addendum,dedendum]
 
     Returns:
@@ -78,8 +79,8 @@ def generate_belt_tooth_profile(z, belt_pitch, pld, hole_width, over_thickness, 
         raise ValueError("Hole width must be strictly smaller than belt pitch.")
 
     alpha = math.radians(alpha_deg)
-    if not 0.0 < alpha < math.radians(45.0):
-        raise ValueError("Pressure angle must be in (0, 45) degrees.")
+    if not 0.0 <= alpha < math.radians(45.0):
+        raise ValueError("Pressure angle must be in [0, 45) degrees.")
 
     # Pitch radius imposed by the belt neutral axis
     pitch_radius = z * belt_pitch / (2.0 * math.pi)

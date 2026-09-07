@@ -144,7 +144,8 @@ def generate_belt_tooth_profile(z, belt_pitch, pld, hole_width, over_thickness, 
 - **hole_width** (float): Width of the rectangular belt cutout along the pitch
   line (mm). Equals the pulley tooth thickness at the pitch circle.
 - **over_thickness** (float): How much the involute grows past the upper PLD line (mm)
-- **alpha_deg** (float): Pressure angle of the belt = angle of the rectangular profile (degrees)
+- **alpha_deg** (float): Pressure angle of the belt = angle of the rectangular profile (degrees).
+  `0` is allowed and means a plain rectangular footprint (radial flanks).
 - **num_points** (list of int): Points per segment, order `[involute, trochoid, addendum, dedendum]`
 
 ## Radii
