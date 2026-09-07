@@ -14,7 +14,8 @@ def generate_tooth_profile(z, m, alpha_deg, profile_shift=0.0, undercut_auto_sup
 
 - **z** (int): Number of teeth
 - **m** (float): Module in mm 
-- **alpha_deg** (float): Pressure angle in degrees (typically 14.5° or 20°)
+- **alpha_deg** (float): Pressure angle in degrees (typically 14.5° or 20°).
+  `0` is allowed and means radial flanks (e.g. for rectangular teeth).
 - **profile_shift** (float): Profile shifting coefficient (default: 0.0)
 - **undercut_auto_suppress** (bool): Automatically calculate profile shift to prevent undercut (default: False)
 - **num_points** (int): Number of points per curve segment (default: 20)

@@ -50,8 +50,10 @@ def generate_external_tooth_profile(z, m, alpha_deg, profile_shift=0.0, undercut
         'lower_arc': [(x1, y1), (x2, y2), ...] - Lower dedendum arc
     """
     
-    # Convert pressure angle to radians
+    # Convert pressure angle to radians (0 is allowed: radial flanks)
     alpha = math.radians(alpha_deg)
+    if not 0.0 <= alpha < math.radians(90.0):
+        raise ValueError("Pressure angle must be in [0, 90) degrees.")
     
     # Standard radii calculations
     pitch_radius = m * z / 2.0
@@ -249,8 +251,10 @@ def generate_internal_tooth_profile(z, m, alpha_deg, thickness, profile_shift=0.
         'external_arc': [(x1, y1), (x2, y2), ...] - External arc
     """
     
-    # Convert pressure angle to radians
+    # Convert pressure angle to radians (0 is allowed: radial flanks)
     alpha = math.radians(alpha_deg)
+    if not 0.0 <= alpha < math.radians(90.0):
+        raise ValueError("Pressure angle must be in [0, 90) degrees.")
     
     # Standard radii calculations
     pitch_radius = m * z / 2.0
